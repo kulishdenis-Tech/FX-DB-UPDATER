@@ -143,7 +143,7 @@ def save_rows(rows: List[list], output_file_ignored: str = ""):
     try:
         inserted, skipped = _cloud.insert_rates(channel, rows)
         LAST_SAVE_STATS[channel] = {{"inserted": inserted, "provided": len(rows), "skipped": skipped}}
-        print(f"[CLOUD] {channel:<12} → додано: {{inserted}} (із {{len(rows)}})")
+        print(f"[CLOUD] {rows[0][0]:<12} → додано: {inserted} (із {len(rows)})")
     except Exception as e:
         print(f"[ERROR] Supabase insert: {{e}}")
 
