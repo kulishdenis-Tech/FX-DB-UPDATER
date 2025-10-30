@@ -1,29 +1,29 @@
 # === fx_master_runner.py ===
 """
-FX Master Runner — один файл для Render.
+FX Master Runner — мінімалістичний cloud-runner для Render.
 - Інжектить у sys.modules "parser_utils_v2", "db_adapter_cloud", "version_control"
-- Читає RAW з Supabase Storage (bucket=RAW_BUCKET)
-- Імпортує та запускає 7 парсерів (parse_once), без змін у їхньому коді
-- Зберігає тільки в Supabase DB (таблиця "rates"), без CSV
-- Показує детальні логи по кожному каналу
+- Зчитує RAW з Supabase Storage (bucket=RAW_BUCKET)
+- Імпортує 7 парсерів (fx_parse_*) та виконує parse_once()
+- Зберігає дані у таблицю rates Supabase
+- Виводить логи по кожному каналу
 """
 
 import os, sys, types, importlib, traceback
 from datetime import datetime
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 0) Перевірка ENV
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 0️⃣ ENV keys
+# ────────────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 RAW_BUCKET   = os.getenv("RAW_BUCKET", "raw")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise SystemExit("❌ SUPABASE_URL / SUPABASE_KEY must be set.")
+    raise SystemExit("❌ SUPABASE_URL / SUPABASE_KEY must be set in environment.")
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 1) Створюємо ін-меморі модуль db_adapter_cloud
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 1️⃣ db_adapter_cloud
+# ────────────────────────────────────────────────
 db_adapter_cloud = types.ModuleType("db_adapter_cloud")
 exec(r"""
 import os
@@ -42,7 +42,6 @@ class SupabaseAdapter:
     def insert_rates(self, channel, rows):
         ch_id = self._get_or_create_channel(channel)
         inserted = 0
-        # батчами аби не впертись у ліміт
         batch_size = 10
         for i in range(0, len(rows), batch_size):
             payload = []
@@ -61,7 +60,7 @@ class SupabaseAdapter:
                 })
             self.client.table("rates").insert(payload).execute()
             inserted += len(payload)
-        return inserted, 0  # skipped рахуємо на рівні дедупу
+        return inserted, 0
 
     def _get_or_create_channel(self, name):
         resp = self.client.table("channels").select("id").eq("name", name).execute()
@@ -72,14 +71,13 @@ class SupabaseAdapter:
 """, db_adapter_cloud.__dict__)
 sys.modules["db_adapter_cloud"] = db_adapter_cloud
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 2) Створюємо ін-меморі модуль version_control (дедуп з БД)
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 2️⃣ version_control (дедуп з БД)
+# ────────────────────────────────────────────────
 version_control = types.ModuleType("version_control")
 exec(r"""
 import os
 from db_adapter_cloud import SupabaseAdapter
-
 _cloud = SupabaseAdapter()
 
 def _channel_from_output_path(path: str) -> str:
@@ -92,14 +90,11 @@ def load_last_rates(output_file_path: str):
     ch_name = _channel_from_output_path(output_file_path)
     ch_id = _cloud._get_or_create_channel(ch_name)
     prev = {}
-
-    # тягнемо останні ~2000 рядків для дедупу
     resp = _cloud.client.table("rates") \
         .select("currency_a,currency_b,buy,sell,comment") \
         .eq("channel_id", ch_id) \
         .order("published", desc=True) \
         .limit(2000).execute()
-
     for r in resp.data or []:
         a, b = r["currency_a"], r["currency_b"]
         buy, sell = r["buy"], r["sell"]
@@ -120,21 +115,17 @@ def is_rate_changed(new_rate, old_rate):
 """, version_control.__dict__)
 sys.modules["version_control"] = version_control
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 3) Створюємо ін-меморі модуль parser_utils_v2 (тільки cloud)
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 3️⃣ parser_utils_v2 (cloud-only)
+# ────────────────────────────────────────────────
 parser_utils_v2 = types.ModuleType("parser_utils_v2")
 exec(rf"""
-import os, csv, re
+import os
 from typing import List, Optional
 from db_adapter_cloud import SupabaseAdapter
-from version_control import load_last_rates, is_rate_changed
-
 RAW_BUCKET = os.getenv("RAW_BUCKET", "{RAW_BUCKET}")
 _cloud = SupabaseAdapter()
-
-# Глобальна статистика останнього збереження (для логів раннера)
-LAST_SAVE_STATS = {{}}  # channel -> dict(inserted, provided, skipped)
+LAST_SAVE_STATS = {{}}  # channel -> dict(inserted, provided)
 
 def save_rows(rows: List[list], output_file_ignored: str = ""):
     if not rows:
@@ -142,13 +133,13 @@ def save_rows(rows: List[list], output_file_ignored: str = ""):
     channel = rows[0][0] if rows else "UNKNOWN"
     try:
         inserted, skipped = _cloud.insert_rates(channel, rows)
-        LAST_SAVE_STATS[channel] = {{"inserted": inserted, "provided": len(rows), "skipped": skipped}}
-        print(f"[CLOUD] {rows[0][0]:<12} → додано: {inserted} (із {len(rows)})")
+        _channel_name = rows[0][0] if rows and len(rows[0]) > 0 else "UNKNOWN"
+        print(f"[CLOUD] {{_channel_name:<12}} → додано: {{inserted}} (із {{len(rows)}})")
+        LAST_SAVE_STATS[channel] = {{"inserted": inserted, "provided": len(rows)}}
     except Exception as e:
         print(f"[ERROR] Supabase insert: {{e}}")
 
 def save_to_csv(*args, **kwargs):
-    # Вимкнено (не використовується). Лишено на випадок імпорту в старих парсерах.
     return
 
 def norm_price_auto(s: str) -> Optional[float]:
@@ -179,7 +170,6 @@ def iter_message_blocks(lines: List[str], id_re):
         yield block
 
 def read_raw_text(channel: str) -> Optional[str]:
-    \"\"\"Читає {channel}_raw.txt із Supabase Storage (bucket=RAW_BUCKET).\"\"\"
     try:
         blob = _cloud.client.storage.from_(RAW_BUCKET).download(f"{{channel}}_raw.txt")
         return blob.decode("utf-8", errors="replace")
@@ -189,9 +179,9 @@ def read_raw_text(channel: str) -> Optional[str]:
 """, parser_utils_v2.__dict__)
 sys.modules["parser_utils_v2"] = parser_utils_v2
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 4) Конфіг каналів → модулі парсерів (ТВОЇ 7 ФАЙЛІВ)
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 4️⃣ Канали та парсери
+# ────────────────────────────────────────────────
 CHANNELS = {
     "GARANT":       "fx_parse_GARANT_auto",
     "KIT_GROUP":    "fx_parse_KIT_GROUP_auto",
@@ -202,40 +192,36 @@ CHANNELS = {
     "SWAPS":        "fx_parse_SWAPS_auto",
 }
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 5) Запуск
-# ────────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────
+# 5️⃣ Runner
+# ────────────────────────────────────────────────
 def run():
     print("\n=== 🌍 FX Master Runner (Supabase Cloud Mode) ===")
     print(f"[START] {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
     print(f"[INFO] RAW bucket: {RAW_BUCKET}")
     print(f"[INFO] Каналів до обробки: {len(CHANNELS)}\n")
 
-    total_ok = 0
-    total_skip = 0
-    total_err = 0
+    total_ok = total_skip = total_err = 0
 
     for ch_name, module_name in CHANNELS.items():
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print(f"[RUN] 🔎 Канал: {ch_name}")
 
         try:
-            # Перевіряємо наявність RAW (потрібно, аби парсер не біг даремно)
             raw = parser_utils_v2.read_raw_text(ch_name)
             if not raw:
                 print(f"[SKIP] RAW для {ch_name} відсутній — пропуск.\n")
                 total_skip += 1
                 continue
 
-            # Імпортуємо модуль парсера і запускаємо
             mod = importlib.import_module(module_name)
             if not hasattr(mod, "parse_once"):
-                print(f"[ERR] У модулі {module_name} відсутня parse_once(). Пропуск.")
+                print(f"[ERR] У модулі {module_name} відсутня parse_once().")
                 total_skip += 1
                 continue
 
             before = datetime.utcnow()
-            mod.parse_once()  # усередині викличе save_rows() → запише в БД
+            mod.parse_once()
             after = datetime.utcnow()
             elapsed = (after - before).total_seconds()
 
