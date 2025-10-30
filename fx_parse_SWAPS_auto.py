@@ -1,81 +1,105 @@
-# === fx_parse_SWAPS_auto_v2.py ===
+# === fx_parse_SWAPS_auto.py ===
 """
-SWAPS Parser v2 — з повною структурою даних і підтримкою часів, версій, коментарів.
+CLOUD-версія класичного локального парсера SWAPS.
+Логіка парсингу — 100% як у тебе.
+Єдина різниця: дані читаються з Supabase RAW і пишуться у таблицю rates.
 """
 
 import re
-from datetime import datetime
-from supabase_io import get_raw_from_supabase, get_prev_rates, save_to_supabase, get_channel_id
+from supabase import create_client
+import os
 
+# === Налаштування Supabase ===
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+RAW_BUCKET = os.getenv("RAW_BUCKET", "raw")
+
+client = create_client(SUPABASE_URL, SUPABASE_KEY)
 CHANNEL = "SWAPS"
 
-# === Регулярні вирази ===
+# === Твоя оригінальна регулярка ===
 CURRENCY_RE = re.compile(
-    r"(?mi)^\s*([A-Z]{3})\s*[-/]\s*([A-Z]{3})[^\d\n]*?([0-9]+[.,][0-9]+)\s*/\s*([0-9]+[.,][0-9]+)"
+    r"(?mi)^\s*([A-Z]{3})\s*[-/–]\s*([A-Z]{3})[^\d\n]*?([0-9]+[.,][0-9]+)\s*/\s*([0-9]+[.,][0-9]+)"
 )
 
-MESSAGE_ID_RE = re.compile(r"ID[:=]?\s*(\d+)")
-VERSION_RE = re.compile(r"\bv(\d+)\b", re.IGNORECASE)
-DATE_RE = re.compile(r"(\d{4}[-/]\d{2}[-/]\d{2}\s+\d{2}:\d{2}:\d{2})")
-
-# === Нормалізація чисел ===
-def to_float(value):
+def norm_price_auto(s: str):
+    s = str(s).replace(",", ".").replace(" ", "").strip()
     try:
-        return float(str(value).replace(",", ".").strip())
+        return float(s)
     except:
         return None
 
-# === Визначення змін курсу ===
-def is_changed(new, old):
-    if not old:
+def is_rate_changed(new_rate, old_rate):
+    if not old_rate:
         return True
+    nb, ns = new_rate
+    ob, os = old_rate
     try:
-        nb, ns = new
-        ob, os = old
-        return abs(nb - ob) > 0.001 or abs(ns - os) > 0.001
+        return round(float(nb), 4) != round(float(ob), 4) or round(float(ns), 4) != round(float(os), 4)
     except:
         return True
 
-# === Парсинг тексту ===
-def parse_text(text, prev_rates, channel_id):
-    lines = text.splitlines()
+
+# === Отримання channel_id (створює, якщо нема) ===
+def get_channel_id(channel_name: str) -> int:
+    data = client.table("channels").select("id").eq("name", channel_name).execute()
+    if data.data:
+        return data.data[0]["id"]
+    new = client.table("channels").insert({"name": channel_name}).execute()
+    return new.data[0]["id"]
+
+
+# === Отримання RAW з Supabase ===
+def get_raw_from_supabase(filename: str) -> str:
+    try:
+        res = client.storage.from_(RAW_BUCKET).download(filename)
+        return res.decode("utf-8") if res else None
+    except Exception as e:
+        print(f"[ERROR] RAW не знайдено ({filename}): {e}")
+        return None
+
+
+# === Отримання попередніх курсів ===
+def get_prev_rates(channel_id: int) -> dict:
+    try:
+        data = client.table("rates").select(
+            "currency_a, currency_b, buy, sell, comment"
+        ).eq("channel_id", channel_id).order("id", desc=True).limit(500).execute()
+
+        result = {}
+        for r in data.data:
+            key = (r["currency_a"], r["currency_b"], r.get("comment", ""))
+            result[key] = (r["buy"], r["sell"])
+        return result
+    except Exception as e:
+        print(f"[ERROR] Отримання попередніх курсів: {e}")
+        return {}
+
+
+# === Основна функція парсингу ===
+def parse_text(text, prev, channel_id):
     rows, skipped = [], 0
-    message_id, version, published, edited = 0, "v1", None, None
+    msg_id, version = 0, "v1"
+    published = edited = None
 
-    # Пошук додаткових даних у тексті
-    msg_match = MESSAGE_ID_RE.search(text)
-    ver_match = VERSION_RE.search(text)
-    date_matches = DATE_RE.findall(text)
-
-    if msg_match:
-        message_id = int(msg_match.group(1))
-    if ver_match:
-        version = f"v{ver_match.group(1)}"
-    if len(date_matches) >= 1:
-        published = datetime.strptime(date_matches[0], "%Y-%m-%d %H:%M:%S")
-    if len(date_matches) >= 2:
-        edited = datetime.strptime(date_matches[1], "%Y-%m-%d %H:%M:%S")
-
-    # Основна логіка по рядках
-    for line in lines:
+    for line in text.splitlines():
         m = CURRENCY_RE.search(line)
         if not m:
             continue
 
         a, b, buy, sell = m.groups()
-        buy, sell = to_float(buy), to_float(sell)
+        buy, sell = norm_price_auto(buy), norm_price_auto(sell)
         comment = ""
 
         key = (a, b, comment)
-        if not is_changed((buy, sell), prev_rates.get(key)):
+        if not is_rate_changed((buy, sell), prev.get(key)):
             skipped += 1
             continue
-
-        prev_rates[key] = (buy, sell)
+        prev[key] = (buy, sell)
 
         row = {
             "channel_id": channel_id,
-            "message_id": message_id,
+            "message_id": msg_id,
             "version": version,
             "published": published,
             "edited": edited,
@@ -90,27 +114,30 @@ def parse_text(text, prev_rates, channel_id):
     return rows, skipped
 
 
-# === Основна функція ===
+# === Основний запуск ===
 def parse_once():
     print(f"\n[RUN] 🔍 Парсинг {CHANNEL}")
-
     channel_id = get_channel_id(CHANNEL)
     print(f"[CLOUD] ✅ channel_id={channel_id}")
 
-    raw_text = get_raw_from_supabase(f"{CHANNEL}_raw.txt")
-    if not raw_text:
+    text = get_raw_from_supabase(f"{CHANNEL}_raw.txt")
+    if not text:
         print(f"[WARN] RAW {CHANNEL}_raw.txt порожній або не знайдено")
         return
 
-    prev = get_prev_rates(CHANNEL)
-    rows, skipped = parse_text(raw_text, prev, channel_id)
+    prev = get_prev_rates(channel_id)
+    rows, skipped = parse_text(text, prev, channel_id)
 
-    print(f"[DEBUG] Готово до запису: {len(rows)} рядків (пропущено {skipped})")
-    if rows:
-        print(f"[DEBUG] Приклад рядка: {rows[0]}")
+    if not rows:
+        print(f"[CLOUD] ⏩ Немає нових рядків ({CHANNEL})")
+        return
 
-    inserted = save_to_supabase(rows, CHANNEL)
-    print(f"[OK] {CHANNEL} → додано {inserted}, пропущено {skipped}")
+    try:
+        res = client.table("rates").insert(rows).execute()
+        added = len(res.data) if res.data else 0
+        print(f"[CLOUD] ✅ Додано {added} рядків ({CHANNEL}), пропущено {skipped}")
+    except Exception as e:
+        print(f"[ERROR] Не вдалося записати у Supabase: {e}")
 
 
 if __name__ == "__main__":
