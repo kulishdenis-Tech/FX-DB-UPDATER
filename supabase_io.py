@@ -1,84 +1,103 @@
-# === supabase_io.py ===
+# === supabase_io.py (CLOUD FULL VERSION) ===
 """
-Мінімальний модуль роботи з Supabase:
-- get_raw_from_supabase(filename)  → читає сирий текст із bucket 'raw'
-- get_prev_rates(channel)          → повертає попередні курси з таблиці 'rates'
-- save_to_supabase(rows, channel)  → вставляє нові рядки в таблицю 'rates'
+Модуль для роботи з Supabase:
+- отримання RAW файлів з bucket 'raw'
+- читання попередніх курсів із таблиці rates
+- запис нових рядків у таблицю rates
+- керування таблицею channels
 """
 
 import os
 from supabase import create_client
 
+# ініціалізація клієнта Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 RAW_BUCKET = os.getenv("RAW_BUCKET", "raw")
 
 client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# === 1️⃣ Отримання RAW файлу з bucket ===
 def get_raw_from_supabase(filename: str) -> str:
-    """Завантажує сирий файл з bucket 'raw'."""
     try:
-        blob = client.storage.from_(RAW_BUCKET).download(filename)
-        return blob.decode("utf-8", errors="replace")
+        res = client.storage.from_(RAW_BUCKET).download(filename)
+        text = res.decode("utf-8") if res else None
+        if text:
+            print(f"[CLOUD] ✅ RAW {filename} завантажено ({len(text)} символів)")
+        else:
+            print(f"[CLOUD] ⚠️ RAW {filename} порожній або не знайдено")
+        return text
     except Exception as e:
-        print(f"[WARN] Не вдалося завантажити {filename} з Supabase: {e}")
-        return ""
+        print(f"[ERROR] Не вдалося отримати RAW ({filename}): {e}")
+        return None
 
-def get_prev_rates(channel: str, limit: int = 1000) -> dict:
-    """Отримує останні курси з таблиці 'rates' для дедуплікації."""
-    prev = {}
+
+# === 2️⃣ Отримання channel_id ===
+def get_channel_id(channel_name: str) -> int:
+    """
+    Повертає ID каналу з таблиці channels.
+    Якщо не існує — створює новий запис.
+    """
     try:
-        resp = client.table("channels").select("id").eq("name", channel).execute()
-        if not resp.data:
-            return prev
-        ch_id = resp.data[0]["id"]
+        data = client.table("channels").select("id").eq("name", channel_name).execute()
+        if data.data:
+            return data.data[0]["id"]
 
-        data = client.table("rates") \
-            .select("currency_a,currency_b,buy,sell,comment") \
-            .eq("channel_id", ch_id) \
-            .order("published", desc=True) \
-            .limit(limit) \
-            .execute()
-
-        for r in data.data or []:
-            key = (r["currency_a"], r["currency_b"], r.get("comment", "").strip())
-            prev[key] = (r["buy"], r["sell"])
+        # створюємо, якщо не існує
+        new = client.table("channels").insert({"name": channel_name}).execute()
+        return new.data[0]["id"]
     except Exception as e:
-        print(f"[WARN] Не вдалося отримати попередні дані для {channel}: {e}")
-    return prev
+        print(f"[ERROR] get_channel_id({channel_name}): {e}")
+        return None
 
-def save_to_supabase(rows: list, channel: str):
-    """Записує розпарсені рядки у таблицю 'rates'."""
+
+# === 3️⃣ Отримання попередніх курсів ===
+def get_prev_rates(channel_name: str) -> dict:
+    """
+    Завантажує останні курси з таблиці rates для вказаного каналу.
+    Використовується для перевірки дублів.
+    """
+    try:
+        ch_id = get_channel_id(channel_name)
+        data = client.table("rates").select(
+            "currency_a, currency_b, buy, sell, comment"
+        ).eq("channel_id", ch_id).order("id", desc=True).limit(500).execute()
+
+        result = {}
+        for row in data.data:
+            key = (row["currency_a"], row["currency_b"], row.get("comment", ""))
+            result[key] = (row["buy"], row["sell"])
+
+        print(f"[CLOUD] 🔁 Завантажено {len(result)} попередніх курсів ({channel_name})")
+        return result
+    except Exception as e:
+        print(f"[ERROR] get_prev_rates({channel_name}): {e}")
+        return {}
+
+
+# === 4️⃣ Запис нових рядків у таблицю rates ===
+def save_to_supabase(rows: list, channel_name: str) -> int:
+    """
+    Записує нові курси у таблицю rates.
+    Повертає кількість успішно доданих рядків.
+    """
     if not rows:
+        print(f"[CLOUD] ⏩ Немає нових рядків для {channel_name}")
         return 0
 
     try:
-        ch = client.table("channels").select("id").eq("name", channel).execute()
-        if ch.data:
-            ch_id = ch.data[0]["id"]
-        else:
-            inserted = client.table("channels").insert({"name": channel}).execute()
-            ch_id = inserted.data[0]["id"]
-
-        payload = []
+        ch_id = get_channel_id(channel_name)
         for r in rows:
-            payload.append({
-                "channel_id": ch_id,
-                "message_id": int(r[1]) if r[1] else None,
-                "version": r[2],
-                "published": r[3],
-                "edited": r[4],
-                "currency_a": r[5],
-                "currency_b": r[6],
-                "buy": float(r[7]) if r[7] else None,
-                "sell": float(r[8]) if r[8] else None,
-                "comment": r[9],
-            })
+            r["channel_id"] = ch_id
 
-        client.table("rates").insert(payload).execute()
-        print(f"[CLOUD] {channel} → додано {len(rows)} записів у Supabase")
-        return len(rows)
-
+        resp = client.table("rates").insert(rows).execute()
+        if resp.data:
+            count = len(resp.data)
+            print(f"[CLOUD] ✅ Додано {count} рядків ({channel_name})")
+            return count
+        else:
+            print(f"[CLOUD] ⚠️ Відповідь без data для {channel_name}")
+            return 0
     except Exception as e:
-        print(f"[ERROR] Не вдалося записати у Supabase ({channel}): {e}")
+        print(f"[ERROR] Не вдалося записати у Supabase ({channel_name}): {e}")
         return 0
