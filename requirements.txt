@@ -1,1 +1,3 @@
-Supabase
+# === FX Parser Cloud requirements ===
+supabase==2.5.1
+python-dotenv==1.0.1
