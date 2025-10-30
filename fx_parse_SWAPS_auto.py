@@ -1,7 +1,7 @@
-# === fx_parse_SWAPS_auto.py (CLOUD VERSION) ===
+# === fx_parse_SWAPS_auto.py (CLOUD FIXED) ===
 """
-Оригінальна логіка парсингу SWAPS — без змін.
-Вхід:  RAW-файл із Supabase Storage (bucket 'raw')
+Повна оригінальна логіка парсингу SWAPS.
+Вхід: RAW-файл із Supabase Storage (bucket 'raw')
 Вихід: таблиця 'rates' у Supabase Database
 """
 
@@ -10,12 +10,12 @@ from supabase_io import get_raw_from_supabase, get_prev_rates, save_to_supabase
 
 CHANNEL = "SWAPS"
 
-# Твоя оригінальна регулярка та логіка парсингу
+# Регулярка з оригінального парсера
 CURRENCY_RE = re.compile(
     r"""
     ^\s*
-    (?:[\U0001F1E6-\U0001F1FF]{2}\s*/\s*[\U0001F1E6-\U0001F1FF]{2}\s*)?   # прапорці (опціонально)
-    (?P<a>[A-Z]{3})\s*[-/]\s*(?P<b>[A-Z]{3})                              # пари типу USD-UAH або USD/EUR
+    (?:[\U0001F1E6-\U0001F1FF]{2}\s*/\s*[\U0001F1E6-\U0001F1FF]{2}\s*)?   # прапорці
+    (?P<a>[A-Z]{3})\s*[-/]\s*(?P<b>[A-Z]{3})                              # пари типу USD-UAH
     [^\d\r\n]*?
     (?P<buy>[0-9]+[.,][0-9]+)\s*/\s*(?P<sell>[0-9]+[.,][0-9]+)            # курси
     """,
@@ -43,9 +43,13 @@ def is_rate_changed(new_rate, old_rate):
 
 def process_text(text: str, previous_rates: dict):
     rows, skipped = [], 0
-    msg_id = "auto"
-    version = "v1"
-    published = edited = "auto"
+
+    # === типи полів під таблицю Supabase ===
+    channel_id = 0       # int4
+    message_id = 0       # int8
+    version = "v1"       # text
+    published = None     # timestamp
+    edited = None        # timestamp
 
     for line in text.splitlines():
         m = CURRENCY_RE.search(line)
@@ -62,7 +66,21 @@ def process_text(text: str, previous_rates: dict):
             continue
 
         previous_rates[key] = (buy, sell)
-        rows.append([CHANNEL, msg_id, version, published, edited, a, b, buy, sell, comment])
+
+        # Повна відповідність структурі таблиці `rates`
+        row = {
+            "channel_id": channel_id,
+            "message_id": message_id,
+            "version": version,
+            "published": published,
+            "edited": edited,
+            "currency_a": a,
+            "currency_b": b,
+            "buy": buy,
+            "sell": sell,
+            "comment": comment,
+        }
+        rows.append(row)
 
     return rows, skipped
 
@@ -76,9 +94,12 @@ def parse_once():
 
     previous_rates = get_prev_rates(CHANNEL)
     rows, skipped = process_text(text, previous_rates)
-    count = save_to_supabase(rows, CHANNEL)
 
-    print(f"[DONE] {CHANNEL}: додано {count}, пропущено {skipped}\n")
+    try:
+        inserted = save_to_supabase(rows, CHANNEL)
+        print(f"[OK] {CHANNEL} → додано {inserted}, пропущено {skipped}")
+    except Exception as e:
+        print(f"[ERROR] Не вдалося записати у Supabase ({CHANNEL}): {e}")
 
 if __name__ == "__main__":
     parse_once()
