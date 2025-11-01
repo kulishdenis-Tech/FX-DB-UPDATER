@@ -9,8 +9,8 @@ from decimal import Decimal, InvalidOperation
 
 load_dotenv()
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 BUCKET_NAME = os.environ.get("RAW_BUCKET", "raw")  # Використовуємо RAW_BUCKET з Render або "raw" як fallback
 
 
