@@ -17,10 +17,9 @@ def main():
     print("=" * 70, flush=True)
     print("🚀 ЗАПУСК УСІХ ПАРСЕРІВ (CLOUD)", flush=True)
     print("=" * 70, flush=True)
+    print("[CLOUD] Підключення до Supabase...", flush=True)
     
     for channel_name, module_name in CHANNELS:
-        print(f"\n[RUN] {channel_name.upper()}...", flush=True)
-        
         try:
             module = __import__(module_name)
             process_func = getattr(module, f"process_{channel_name}")

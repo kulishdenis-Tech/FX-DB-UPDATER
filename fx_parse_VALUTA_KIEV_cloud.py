@@ -213,21 +213,14 @@ def process_valuta_kiev():
             rows.append([CHANNEL, msg_id, version, published, edited,
                         cur_a, cur_b, buy, sell, comment])
     
-    print(f"[PARSED] Знайдено: {len(rows)} курсів", flush=True)
-    
     if rows:
         cross_rates = [r for r in rows if "крос" in r[-1]]
         uah_rates = [r for r in rows if r[-1] == ""]
-        print(f"  → UAH пар: {len(uah_rates)} | Крос-курсів: {len(cross_rates)}", flush=True)
-        
         inserted, skipped_db = db.insert_rates(CHANNEL, rows)
-        print(f"[CLOUD] ✅ Записано в БД: {inserted} рядків", flush=True)
-        if skipped_db > 0:
-            print(f"[CLOUD] ⚠️ Пропущено дублікатів: {skipped_db}", flush=True)
+        
+        print(f"{CHANNEL} | Знайдено: {len(rows)} (UAH: {len(uah_rates)}, Крос: {len(cross_rates)}) | Додано: {inserted}, Пропущено: {skipped_db}", flush=True)
     else:
-        print("[INFO] Курсів не знайдено", flush=True)
-    
-    print("[DONE] ✅ Готово.", flush=True)
+        print(f"{CHANNEL} | Курсів не знайдено", flush=True)
 
 if __name__ == "__main__":
     process_valuta_kiev()

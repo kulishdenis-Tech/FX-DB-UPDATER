@@ -30,11 +30,9 @@ def download_text(name: str) -> str:
     try:
         data = sb.storage.from_(BUCKET_NAME).download(name)
         if not data:
-            print(f"[SUPABASE] ⚠️ File not found: {name}", flush=True)
             return ""
         return data.decode("utf-8", errors="ignore")
     except Exception as e:
-        print(f"[SUPABASE] ⚠️ Download error for {name}: {e}", flush=True)
         return ""
 
 def upload_text(name: str, content: str, upsert: bool = True) -> None:
@@ -65,7 +63,6 @@ class SupabaseIO:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("⚠️  Не знайдено ключі Supabase у .env")
         self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("[CLOUD] ✅ Підключено до Supabase", flush=True)
     
     def get_existing_records(self, channel):
         """
@@ -107,8 +104,6 @@ class SupabaseIO:
                 
                 offset += page_size
             
-            print(f"[CLOUD] 📊 Існуючих записів для {channel}: {len(existing)}", flush=True)
-            
             return existing
         except Exception as e:
             print(f"[CLOUD] ⚠️ Error getting existing records: {e}", flush=True)
@@ -148,7 +143,6 @@ class SupabaseIO:
         
         
         if not new_rows:
-            print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
             return 0, len(rows)
         
         # 3️⃣ Вставляємо тільки нові записи (батчування по 50)
@@ -178,7 +172,6 @@ class SupabaseIO:
                 print(f"[CLOUD] ⚠️ Batch error: {e}", flush=True)
                 skipped += len(payload)
         
-        print(f"[CLOUD] 🌐 {channel}: додано {inserted}, пропущено {skipped}", flush=True)
         return inserted, skipped
     
     def _get_or_create_channel(self, name):
