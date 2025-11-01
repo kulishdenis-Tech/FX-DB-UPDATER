@@ -136,6 +136,8 @@ class SupabaseIO:
             if key not in existing:
                 new_rows.append(r)
         
+        print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
+        
         if not new_rows:
             print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
             return 0, len(rows)
