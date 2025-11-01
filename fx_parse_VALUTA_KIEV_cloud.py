@@ -2,7 +2,7 @@
 # Cloud версія парсера VALUTA_KIEV для Render
 
 import sys, io, os, re
-from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks
+from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks, normalize_cross_rate
 
 # 🔧 Windows: фікс кирилиці
 if os.name == "nt":
@@ -164,7 +164,9 @@ def process_valuta_kiev():
             if cur_a == cur_b:
                 continue
 
-            comment = f"крос-курс ({cur_a}/{cur_b})"
+            # Нормалізуємо напрямок крос-курсів (USD завжди другим)
+            cur_a, cur_b, buy, sell = normalize_cross_rate(cur_a, cur_b, buy, sell)
+            comment = "крос-курс"
             
             rows.append([CHANNEL, msg_id, version, published, edited,
                         cur_a, cur_b, buy, sell, comment])

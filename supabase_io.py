@@ -70,28 +70,42 @@ class SupabaseIO:
     def get_existing_records(self, channel):
         """
         Завантажує з БД список вже існуючих записів для каналу.
-        Повертає set з кортежів: (message_id, version, currency_a, currency_b, buy, sell, edited)
+        Повертає set з кортежів: (message_id, version, currency_a, currency_b, buy, sell, edited, comment)
+        Використовує пагінацію для завантаження всіх записів (ліміт Supabase: 1000).
         """
         ch_id = self._get_or_create_channel(channel)
         
         try:
-            resp = self.client.table("rates").select(
-                "message_id, version, currency_a, currency_b, buy, sell, edited, comment"
-            ).eq("channel_id", ch_id).execute()
-            
             existing = set()
-            for row in resp.data:
-                key = (
-                    row['message_id'],
-                    row['version'],
-                    row['currency_a'],
-                    row['currency_b'],
-                    float(row['buy']) if row['buy'] else None,
-                    float(row['sell']) if row['sell'] else None,
-                    str(row['edited']) if row['edited'] else None,  # Конвертуємо datetime в строку
-                    row['comment'] or ""  # Додаємо comment до ключа унікальності
-                )
-                existing.add(key)
+            offset = 0
+            page_size = 1000
+            
+            while True:
+                resp = self.client.table("rates").select(
+                    "message_id, version, currency_a, currency_b, buy, sell, edited, comment"
+                ).eq("channel_id", ch_id).range(offset, offset + page_size - 1).execute()
+                
+                if not resp.data:
+                    break
+                
+                for row in resp.data:
+                    key = (
+                        row['message_id'],
+                        row['version'],
+                        row['currency_a'],
+                        row['currency_b'],
+                        float(row['buy']) if row['buy'] else None,
+                        float(row['sell']) if row['sell'] else None,
+                        str(row['edited']) if row['edited'] else None,  # Конвертуємо datetime в строку
+                        row['comment'] or ""  # Додаємо comment до ключа унікальності
+                    )
+                    existing.add(key)
+                
+                # Якщо завантажили менше ніж page_size, значить це остання сторінка
+                if len(resp.data) < page_size:
+                    break
+                
+                offset += page_size
             
             print(f"[CLOUD] 📊 Існуючих записів для {channel}: {len(existing)}", flush=True)
             return existing
@@ -198,5 +212,27 @@ def detect_currency(line: str):
         if cur in line.upper():
             return cur
     return None
+
+
+def normalize_cross_rate(cur_a, cur_b, buy, sell):
+    """
+    Нормалізує напрямок крос-курсу: USD завжди другим (EUR/USD, GBP/USD).
+    Якщо USD перший (USD/EUR), міняємо місцями валюту та ціни.
+    """
+    if cur_a == "USD" and cur_b != "UAH":
+        # Міняємо місцями: USD/EUR -> EUR/USD з обернутими цінами
+        return cur_b, cur_a, sell, buy
+    return cur_a, cur_b, buy, sell
+
+
+def clean_comment(text):
+    """
+    Очищає коментарі: видаляє символи валют ($, €) та зайві слова.
+    """
+    if not text:
+        return ""
+    text = text.replace("$", "").replace("€", "")
+    text = text.replace("  відділення уточнюйте", "")
+    return text.strip()
 
 

@@ -3,7 +3,7 @@
 # Читає з Supabase Storage, пише в Supabase DB
 
 import sys, io, os, re
-from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks
+from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks, normalize_cross_rate
 
 # 🔧 Windows: фікс кирилиці
 if os.name == "nt":
@@ -112,7 +112,12 @@ def process_swaps():
             if not buy or not sell:
                 continue
 
-            comment = "" if "UAH" in (cur_a, cur_b) else f"крос-курс ({cur_a}/{cur_b})"
+            # Нормалізуємо напрямок крос-курсів (USD завжди другим)
+            if cur_a != "UAH" and cur_b != "UAH":
+                cur_a, cur_b, buy, sell = normalize_cross_rate(cur_a, cur_b, buy, sell)
+                comment = "крос-курс"
+            else:
+                comment = ""
 
             rows.append([CHANNEL, msg_id, version, published, edited,
                          cur_a, cur_b, buy, sell, comment])

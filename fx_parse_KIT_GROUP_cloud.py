@@ -2,7 +2,7 @@
 # Cloud версія парсера KIT_GROUP для Render
 
 import sys, io, os, re
-from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks
+from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks, normalize_cross_rate, clean_comment
 
 # 🔧 Windows: фікс кирилиці
 if os.name == "nt":
@@ -101,11 +101,11 @@ def process_kit_group():
             rest_of_line = ln[m.end():].strip()
             
             if is_cross:
-                comment = f"крос-курс ({cur_a}/{cur_b})"
-                if rest_of_line:
-                    comment = f"{comment}, {rest_of_line}"
+                # Нормалізуємо напрямок крос-курсів (USD завжди другим)
+                cur_a, cur_b, buy, sell = normalize_cross_rate(cur_a, cur_b, buy, sell)
+                comment = "крос-курс"
             else:
-                comment = rest_of_line
+                comment = clean_comment(rest_of_line)
 
             rows.append([CHANNEL, msg_id, version, published, edited,
                         cur_a, cur_b, buy, sell, comment])
