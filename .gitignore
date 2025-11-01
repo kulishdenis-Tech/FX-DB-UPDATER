@@ -8,3 +8,15 @@ __pycache__/
 *.pyc
 raw_data/
 parsed_data/
+
+# Локальні дані які не треба в Git
+RAW/
+PARSED/
+*.csv
+*.db
+*.txt
+!requirements.txt
+!README.md
+!*.md
+!*.sql
+!ENV_TEMPLATE.txt
