@@ -133,6 +133,11 @@ class SupabaseIO:
         duplicates_found = []
         
         for r in rows:
+            # Конвертуємо дату з формату "2025-10-09 16:59:31" в ISO "2025-10-09T16:59:31"
+            edited_str = r[4] if r[4] else ""
+            if edited_str and " " in edited_str:
+                edited_str = edited_str.replace(" ", "T")
+            
             key = (
                 int(r[1]) if r[1] else None,
                 r[2],
@@ -140,7 +145,7 @@ class SupabaseIO:
                 r[6],
                 float(r[7]) if r[7] else None,
                 float(r[8]) if r[8] else None,
-                r[4],
+                edited_str,  # Конвертована дата
                 r[9] or ""  # Додаємо comment до ключа унікальності
             )
             if key not in existing:
@@ -153,9 +158,12 @@ class SupabaseIO:
             print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
         else:
             print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
-            # Якщо всі записи нові, друкуємо приклад першого запису
+            # Якщо всі записи нові, друкуємо приклад першого запису (після конвертації дати)
             if rows:
                 r = rows[0]
+                edited_str = r[4] if r[4] else ""
+                if edited_str and " " in edited_str:
+                    edited_str = edited_str.replace(" ", "T")
                 sample_key = (
                     int(r[1]) if r[1] else None,
                     r[2],
@@ -163,10 +171,10 @@ class SupabaseIO:
                     r[6],
                     float(r[7]) if r[7] else None,
                     float(r[8]) if r[8] else None,
-                    r[4],
+                    edited_str,
                     r[9] or ""
                 )
-                print(f"[CLOUD] 🔍 Приклад ключа першого запису: {sample_key}", flush=True)
+                print(f"[CLOUD] 🔍 Приклад ключа першого запису (після конвертації): {sample_key}", flush=True)
         
         if not new_rows:
             print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
