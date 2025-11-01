@@ -113,6 +113,8 @@ class SupabaseIO:
             if existing:
                 sample = next(iter(existing))
                 print(f"[CLOUD] 🔍 Приклад ключа з БД: {sample}", flush=True)
+            else:
+                print(f"[CLOUD] ⚠️ {channel}: existing set пустий (навіть якщо len={len(existing)})", flush=True)
             
             return existing
         except Exception as e:
