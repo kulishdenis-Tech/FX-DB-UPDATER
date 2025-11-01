@@ -5,7 +5,6 @@
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
-from decimal import Decimal, InvalidOperation
 
 load_dotenv()
 
@@ -68,15 +67,67 @@ class SupabaseIO:
         self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
         print("[CLOUD] ✅ Підключено до Supabase", flush=True)
     
-    def insert_rates(self, channel, rows):
-        """Записує курси валют у таблицю rates, створює канал якщо треба."""
+    def get_existing_records(self, channel):
+        """
+        Завантажує з БД список вже існуючих записів для каналу.
+        Повертає set з кортежів: (message_id, version, currency_a, currency_b, buy, sell, edited)
+        """
         ch_id = self._get_or_create_channel(channel)
-        inserted, skipped = 0, 0
         
-        # Батчування (по 10 рядків за раз)
-        batch_size = 10
-        for i in range(0, len(rows), batch_size):
-            batch = rows[i:i+batch_size]
+        try:
+            resp = self.client.table("rates").select(
+                "message_id, version, currency_a, currency_b, buy, sell, edited"
+            ).eq("channel_id", ch_id).execute()
+            
+            existing = set()
+            for row in resp.data:
+                key = (
+                    row['message_id'],
+                    row['version'],
+                    row['currency_a'],
+                    row['currency_b'],
+                    float(row['buy']) if row['buy'] else None,
+                    float(row['sell']) if row['sell'] else None,
+                    row['edited']
+                )
+                existing.add(key)
+            
+            return existing
+        except Exception as e:
+            print(f"[CLOUD] ⚠️ Error getting existing records: {e}", flush=True)
+            return set()
+    
+    def insert_rates(self, channel, rows):
+        """Записує курси валют у таблицю rates, фільтруючи дублікати."""
+        ch_id = self._get_or_create_channel(channel)
+        
+        # 1️⃣ Завантажуємо існуючі записи
+        existing = self.get_existing_records(channel)
+        
+        # 2️⃣ Фільтруємо нові записи
+        new_rows = []
+        for r in rows:
+            key = (
+                int(r[1]) if r[1] else None,
+                r[2],
+                r[5],
+                r[6],
+                float(r[7]) if r[7] else None,
+                float(r[8]) if r[8] else None,
+                r[4]
+            )
+            if key not in existing:
+                new_rows.append(r)
+        
+        if not new_rows:
+            print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
+            return 0, len(rows)
+        
+        # 3️⃣ Вставляємо тільки нові записи (батчування по 50)
+        inserted, skipped = 0, len(rows) - len(new_rows)
+        batch_size = 50
+        for i in range(0, len(new_rows), batch_size):
+            batch = new_rows[i:i+batch_size]
             payload = []
             for r in batch:
                 record = {
@@ -96,39 +147,11 @@ class SupabaseIO:
                 self.client.table("rates").insert(payload).execute()
                 inserted += len(payload)
             except Exception as e:
-                # Дублікат або інша помилка
                 print(f"[CLOUD] ⚠️ Batch error: {e}", flush=True)
                 skipped += len(payload)
         
         print(f"[CLOUD] 🌐 {channel}: додано {inserted}, пропущено {skipped}", flush=True)
         return inserted, skipped
-    
-    def get_last_rates(self, channel):
-        """
-        Отримує останні курси для каналу з Supabase БД.
-        Повертає словник: {(currency_a, currency_b): (buy, sell)}
-        """
-        ch_id = self._get_or_create_channel(channel)
-        
-        try:
-            # Отримуємо останні курси для кожної валютної пари
-            resp = self.client.table("rates").select(
-                "currency_a, currency_b, buy, sell"
-            ).eq("channel_id", ch_id).execute()
-            
-            # Групуємо по парах і беремо останній (просто перший у відповіді)
-            last_rates = {}
-            for row in resp.data:
-                pair_key = (row['currency_a'], row['currency_b'])
-                # Якщо вже є пара, залишаємо першу (але це не критично)
-                if pair_key not in last_rates:
-                    last_rates[pair_key] = (row['buy'], row['sell'])
-            
-            print(f"[CLOUD] Останні курси в БД: {len(last_rates)} пар")
-            return last_rates
-        except Exception as e:
-            print(f"[CLOUD] ⚠️ Error getting last rates: {e}")
-            return {}
     
     def _get_or_create_channel(self, name):
         """Отримує або створює канал"""
@@ -142,20 +165,6 @@ class SupabaseIO:
 # ============================================
 # 🔍 UTILITY FUNCTIONS
 # ============================================
-
-def is_rate_changed(new_rate, last_rate):
-    """Порівнює курси числово, щоб ігнорувати 41.5 vs 41.50"""
-    if not last_rate:
-        return True
-    buy_old, sell_old = last_rate
-    _, _, buy_new, sell_new = new_rate
-    try:
-        b_old, s_old = Decimal(buy_old), Decimal(sell_old)
-        b_new, s_new = Decimal(buy_new), Decimal(sell_new)
-    except InvalidOperation:
-        return buy_old != buy_new or sell_old != sell_new
-    return (b_old != b_new) or (s_old != s_new)
-
 
 def norm_price_auto(s: str):
     """Нормалізація ціни"""
@@ -178,4 +187,13 @@ def iter_message_blocks(lines, id_re):
         block.append(line)
     if block:
         yield block
+
+def detect_currency(line: str):
+    """Автовизначення валюти"""
+    currencies = ["USD", "EUR", "PLN", "GBP", "CHF", "CAD", "CZK", "SEK", "JPY", "NOK", "DKK"]
+    for cur in currencies:
+        if cur in line.upper():
+            return cur
+    return None
+
 
