@@ -3,7 +3,7 @@
 # Читає з Supabase Storage, пише в Supabase DB
 
 import sys, io, os, re
-from supabase_io import SupabaseIO, download_text, is_rate_changed, norm_price_auto, iter_message_blocks
+from supabase_io import SupabaseIO, download_text, norm_price_auto, iter_message_blocks
 
 # 🔧 Windows: фікс кирилиці
 if os.name == "nt":
@@ -64,11 +64,7 @@ def process_swaps():
     
     print(f"[CLOUD] ✅ Завантажено {len(raw_content)} символів з Supabase", flush=True)
     
-    # 3️⃣ Отримуємо останні курси з БД (замість CSV)
-    previous_rates = db.get_last_rates(CHANNEL)
-    print(f"[CLOUD] Останні курси в БД: {len(previous_rates)} пар", flush=True)
-    
-    # 4️⃣ Парсимо RAW (ЛОГІКА БЕЗ ЗМІН!)
+    # 3️⃣ Парсимо RAW (БЕЗ ФІЛЬТРІВ - записуємо ВСЕ)
     raw = raw_content.replace("[NO TEXT]", "")
     lines = raw.splitlines()
     blocks = iter_message_blocks(lines, ID_RE)
@@ -86,9 +82,8 @@ def process_swaps():
             sorted_blocks.append((mid, b))
     sorted_blocks.sort(key=lambda x: x[0])
     
-    # 5️⃣ Витягуємо курси
+    # 4️⃣ Витягуємо курси
     rows = []
-    skipped = 0
     
     for _, block in sorted_blocks:
         msg_id = version = published = edited = None
@@ -119,19 +114,11 @@ def process_swaps():
 
             comment = "" if "UAH" in (cur_a, cur_b) else f"крос-курс ({cur_a}/{cur_b})"
 
-            pair_key = (cur_a, cur_b)
-            new_rate = (cur_a, cur_b, buy, sell)
-
-            if not is_rate_changed(new_rate, previous_rates.get(pair_key)):
-                skipped += 1
-                continue
-
-            previous_rates[pair_key] = (buy, sell)
             rows.append([CHANNEL, msg_id, version, published, edited,
                          cur_a, cur_b, buy, sell, comment])
     
-    # 6️⃣ Зберігаємо в Supabase БД
-    print(f"[PARSED] Знайдено: {len(rows) + skipped} | Нових: {len(rows)} | Пропущено: {skipped}", flush=True)
+    # 5️⃣ Зберігаємо в Supabase БД
+    print(f"[PARSED] Знайдено: {len(rows)} курсів", flush=True)
     
     if rows:
         cross_rates = [r for r in rows if "крос" in r[-1]]
@@ -139,9 +126,11 @@ def process_swaps():
         print(f"  → UAH пар: {len(uah_rates)} | Крос-курсів: {len(cross_rates)}", flush=True)
         
         inserted, skipped_db = db.insert_rates(CHANNEL, rows)
-        print(f"[CLOUD] ✅ Записано в БД: {inserted} нових", flush=True)
+        print(f"[CLOUD] ✅ Записано в БД: {inserted} рядків", flush=True)
+        if skipped_db > 0:
+            print(f"[CLOUD] ⚠️ Пропущено дублікатів: {skipped_db}", flush=True)
     else:
-        print("[INFO] Нових рядків немає", flush=True)
+        print("[INFO] Курсів не знайдено", flush=True)
     
     print("[DONE] ✅ Готово.", flush=True)
 

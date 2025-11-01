@@ -1,0 +1,3 @@
+supabase
+telethon
+python-dotenv
