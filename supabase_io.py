@@ -109,13 +109,6 @@ class SupabaseIO:
             
             print(f"[CLOUD] 📊 Існуючих записів для {channel}: {len(existing)}", flush=True)
             
-            # Діагностика: друкуємо приклад першого запису з БД
-            if existing:
-                sample = next(iter(existing))
-                print(f"[CLOUD] 🔍 Приклад ключа з БД: {sample}", flush=True)
-            else:
-                print(f"[CLOUD] ⚠️ {channel}: existing set пустий (навіть якщо len={len(existing)})", flush=True)
-            
             return existing
         except Exception as e:
             print(f"[CLOUD] ⚠️ Error getting existing records: {e}", flush=True)
@@ -153,28 +146,6 @@ class SupabaseIO:
             else:
                 duplicates_found.append(key)
         
-        # Діагностичний вивід перших 3 дублікатів
-        if duplicates_found:
-            print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
-        else:
-            print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
-            # Якщо всі записи нові, друкуємо приклад першого запису (після конвертації дати)
-            if rows:
-                r = rows[0]
-                edited_str = r[4] if r[4] else ""
-                if edited_str and " " in edited_str:
-                    edited_str = edited_str.replace(" ", "T")
-                sample_key = (
-                    int(r[1]) if r[1] else None,
-                    r[2],
-                    r[5],
-                    r[6],
-                    float(r[7]) if r[7] else None,
-                    float(r[8]) if r[8] else None,
-                    edited_str,
-                    r[9] or ""
-                )
-                print(f"[CLOUD] 🔍 Приклад ключа першого запису (після конвертації): {sample_key}", flush=True)
         
         if not new_rows:
             print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
