@@ -76,7 +76,7 @@ class SupabaseIO:
         
         try:
             resp = self.client.table("rates").select(
-                "message_id, version, currency_a, currency_b, buy, sell, edited"
+                "message_id, version, currency_a, currency_b, buy, sell, edited, comment"
             ).eq("channel_id", ch_id).execute()
             
             existing = set()
@@ -88,10 +88,12 @@ class SupabaseIO:
                     row['currency_b'],
                     float(row['buy']) if row['buy'] else None,
                     float(row['sell']) if row['sell'] else None,
-                    row['edited']
+                    str(row['edited']) if row['edited'] else None,  # Конвертуємо datetime в строку
+                    row['comment'] or ""  # Додаємо comment до ключа унікальності
                 )
                 existing.add(key)
             
+            print(f"[CLOUD] 📊 Існуючих записів для {channel}: {len(existing)}", flush=True)
             return existing
         except Exception as e:
             print(f"[CLOUD] ⚠️ Error getting existing records: {e}", flush=True)
@@ -114,7 +116,8 @@ class SupabaseIO:
                 r[6],
                 float(r[7]) if r[7] else None,
                 float(r[8]) if r[8] else None,
-                r[4]
+                r[4],
+                r[9] or ""  # Додаємо comment до ключа унікальності
             )
             if key not in existing:
                 new_rows.append(r)
