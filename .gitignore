@@ -3,18 +3,20 @@
 *.session
 Archive/
 
-# (додатково можна ігнорити тимчасові файли)
+# Тимчасові файли
 __pycache__/
 *.pyc
-raw_data/
-parsed_data/
 
 # Локальні дані які не треба в Git
 RAW/
 PARSED/
 *.csv
 *.db
-*.txt
+rates_rows.csv
+SWAPS_raw.txt
+fx_parser.db
+
+# Але дозволяємо служебні файли
 !requirements.txt
 !README.md
 !*.md
