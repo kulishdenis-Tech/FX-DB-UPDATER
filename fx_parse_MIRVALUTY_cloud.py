@@ -175,9 +175,9 @@ def process_mirvaluty():
         uah_rates = [r for r in rows if not r[-1].startswith("крос-курс")]
         inserted, skipped_db = db.insert_rates(CHANNEL, rows)
         
-        print(f"{CHANNEL} | Знайдено: {len(rows)} (UAH: {len(uah_rates)}, Крос: {len(cross_rates)}) | Додано: {inserted}, Пропущено: {skipped_db}", flush=True)
+        print(f"{CHANNEL:12} | Знайдено: {len(rows):4} (UAH: {len(uah_rates):4}, Крос: {len(cross_rates):3}) | Додано: {inserted:4}, Пропущено: {skipped_db:4}", flush=True)
     else:
-        print(f"{CHANNEL} | Курсів не знайдено", flush=True)
+        print(f"{CHANNEL:12} | Курсів не знайдено", flush=True)
 
 if __name__ == "__main__":
     process_mirvaluty()
