@@ -1,6 +1,7 @@
 # Ігноруємо конфіденційні файли
 .env
 *.session
+*.session-journal
 Archive/
 
 # Тимчасові файли
