@@ -11,7 +11,7 @@ load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-BUCKET_NAME = "raw"
+BUCKET_NAME = os.environ.get("RAW_BUCKET", "raw")  # Використовуємо RAW_BUCKET з Render або "raw" як fallback
 
 
 # ============================================
