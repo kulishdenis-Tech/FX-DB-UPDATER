@@ -38,13 +38,15 @@ python fx_parse_SWAPS_auto.py
 3. Підключи GitHub репо: **kulishdenis-Tech/FX-DB-UPDATER**
 4. Налаштуй:
    - **Name**: `fx-parser-swaps`
-   - **Schedule**: `*/30 * * * *` (кожні 30 хвилин)
+   - **Schedule**: `*/10 * * * *` (кожні 10 хвилин)
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `python fx_parse_SWAPS_auto.py`
 5. Додай Environment Variables (Supabase Dashboard → Settings → API):
    - `SUPABASE_URL` = `https://xxxxx.supabase.co`
    - `SUPABASE_KEY` = `service_role_key` (не anon key!)
 6. Натисни "Create Cron Job"
+
+**⚠️ Увага:** Якщо у тебе вже є Background Worker **FX-DB-UPDATER**, видали його перед створенням Cron Job!
 
 ## 📊 Що робить парсер
 
