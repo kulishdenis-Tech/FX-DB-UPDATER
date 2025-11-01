@@ -108,6 +108,12 @@ class SupabaseIO:
                 offset += page_size
             
             print(f"[CLOUD] 📊 Існуючих записів для {channel}: {len(existing)}", flush=True)
+            
+            # Діагностика: друкуємо приклад першого запису з БД
+            if existing:
+                sample = next(iter(existing))
+                print(f"[CLOUD] 🔍 Приклад ключа з БД: {sample}", flush=True)
+            
             return existing
         except Exception as e:
             print(f"[CLOUD] ⚠️ Error getting existing records: {e}", flush=True)
