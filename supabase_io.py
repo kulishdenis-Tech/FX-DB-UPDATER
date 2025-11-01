@@ -122,6 +122,8 @@ class SupabaseIO:
         
         # 2️⃣ Фільтруємо нові записи
         new_rows = []
+        duplicates_found = []
+        
         for r in rows:
             key = (
                 int(r[1]) if r[1] else None,
@@ -135,8 +137,28 @@ class SupabaseIO:
             )
             if key not in existing:
                 new_rows.append(r)
+            else:
+                duplicates_found.append(key)
         
-        print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
+        # Діагностичний вивід перших 3 дублікатів
+        if duplicates_found:
+            print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
+        else:
+            print(f"[CLOUD] 🔍 {channel}: нових записів для вставки: {len(new_rows)} з {len(rows)}", flush=True)
+            # Якщо всі записи нові, друкуємо приклад першого запису
+            if rows:
+                r = rows[0]
+                sample_key = (
+                    int(r[1]) if r[1] else None,
+                    r[2],
+                    r[5],
+                    r[6],
+                    float(r[7]) if r[7] else None,
+                    float(r[8]) if r[8] else None,
+                    r[4],
+                    r[9] or ""
+                )
+                print(f"[CLOUD] 🔍 Приклад ключа першого запису: {sample_key}", flush=True)
         
         if not new_rows:
             print(f"[CLOUD] 🌐 {channel}: всі {len(rows)} записів вже є в БД", flush=True)
