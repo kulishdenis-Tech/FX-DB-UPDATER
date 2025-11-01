@@ -59,13 +59,14 @@ def process_swaps():
     raw_content = download_text(filename)
     
     if not raw_content:
-        print(f"[WARN] Файл {filename} не знайдено в Supabase Storage")
+        print(f"[WARN] Файл {filename} не знайдено в Supabase Storage", flush=True)
         return
     
-    print(f"[CLOUD] ✅ Завантажено {len(raw_content)} символів з Supabase")
+    print(f"[CLOUD] ✅ Завантажено {len(raw_content)} символів з Supabase", flush=True)
     
     # 3️⃣ Отримуємо останні курси з БД (замість CSV)
     previous_rates = db.get_last_rates(CHANNEL)
+    print(f"[CLOUD] Останні курси в БД: {len(previous_rates)} пар", flush=True)
     
     # 4️⃣ Парсимо RAW (ЛОГІКА БЕЗ ЗМІН!)
     raw = raw_content.replace("[NO TEXT]", "")
@@ -130,19 +131,19 @@ def process_swaps():
                          cur_a, cur_b, buy, sell, comment])
     
     # 6️⃣ Зберігаємо в Supabase БД
-    print(f"[PARSED] Знайдено: {len(rows) + skipped} | Нових: {len(rows)} | Пропущено: {skipped}")
+    print(f"[PARSED] Знайдено: {len(rows) + skipped} | Нових: {len(rows)} | Пропущено: {skipped}", flush=True)
     
     if rows:
         cross_rates = [r for r in rows if "крос" in r[-1]]
         uah_rates = [r for r in rows if r[-1] == ""]
-        print(f"  → UAH пар: {len(uah_rates)} | Крос-курсів: {len(cross_rates)}")
+        print(f"  → UAH пар: {len(uah_rates)} | Крос-курсів: {len(cross_rates)}", flush=True)
         
         inserted, skipped_db = db.insert_rates(CHANNEL, rows)
-        print(f"[CLOUD] ✅ Записано в БД: {inserted} нових")
+        print(f"[CLOUD] ✅ Записано в БД: {inserted} нових", flush=True)
     else:
-        print("[INFO] Нових рядків немає")
+        print("[INFO] Нових рядків немає", flush=True)
     
-    print("[DONE] ✅ Готово.")
+    print("[DONE] ✅ Готово.", flush=True)
 
 if __name__ == "__main__":
     process_swaps()

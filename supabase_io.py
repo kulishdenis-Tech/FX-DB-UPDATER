@@ -31,11 +31,11 @@ def download_text(name: str) -> str:
     try:
         data = sb.storage.from_(BUCKET_NAME).download(name)
         if not data:
-            print(f"[SUPABASE] ⚠️ File not found: {name}")
+            print(f"[SUPABASE] ⚠️ File not found: {name}", flush=True)
             return ""
         return data.decode("utf-8", errors="ignore")
     except Exception as e:
-        print(f"[SUPABASE] ⚠️ Download error for {name}: {e}")
+        print(f"[SUPABASE] ⚠️ Download error for {name}: {e}", flush=True)
         return ""
 
 def upload_text(name: str, content: str, upsert: bool = True) -> None:
@@ -50,9 +50,9 @@ def upload_text(name: str, content: str, upsert: bool = True) -> None:
             "x-upsert": "true" if upsert else "false",
         }
         sb.storage.from_(BUCKET_NAME).upload(name, content.encode("utf-8"), headers)
-        print(f"[SUPABASE] ✅ Uploaded: {name}")
+        print(f"[SUPABASE] ✅ Uploaded: {name}", flush=True)
     except Exception as e:
-        print(f"[SUPABASE] ❌ Upload error for {name}: {e}")
+        print(f"[SUPABASE] ❌ Upload error for {name}: {e}", flush=True)
 
 
 # ============================================
@@ -66,7 +66,7 @@ class SupabaseIO:
         if not SUPABASE_URL or not SUPABASE_KEY:
             raise ValueError("⚠️  Не знайдено ключі Supabase у .env")
         self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("[CLOUD] ✅ Підключено до Supabase")
+        print("[CLOUD] ✅ Підключено до Supabase", flush=True)
     
     def insert_rates(self, channel, rows):
         """Записує курси валют у таблицю rates, створює канал якщо треба."""
@@ -97,10 +97,10 @@ class SupabaseIO:
                 inserted += len(payload)
             except Exception as e:
                 # Дублікат або інша помилка
-                print(f"[CLOUD] ⚠️ Batch error: {e}")
+                print(f"[CLOUD] ⚠️ Batch error: {e}", flush=True)
                 skipped += len(payload)
         
-        print(f"[CLOUD] 🌐 {channel}: додано {inserted}, пропущено {skipped}")
+        print(f"[CLOUD] 🌐 {channel}: додано {inserted}, пропущено {skipped}", flush=True)
         return inserted, skipped
     
     def get_last_rates(self, channel):
