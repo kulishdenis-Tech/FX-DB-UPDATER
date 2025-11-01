@@ -1,0 +1,6 @@
+# Supabase Configuration
+# Скопіюй цей файл в .env і заповни свої значення
+
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your_service_role_key_here
+
