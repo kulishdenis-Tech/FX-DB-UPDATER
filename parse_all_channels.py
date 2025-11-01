@@ -19,11 +19,18 @@ def main():
     print("=" * 70, flush=True)
     print("[CLOUD] Підключення до Supabase...", flush=True)
     
+    total_inserted = 0
+    total_skipped = 0
+    
     for channel_name, module_name in CHANNELS:
         try:
             module = __import__(module_name)
             process_func = getattr(module, f"process_{channel_name}")
-            process_func()
+            result = process_func()  # Парсери повертають (inserted, skipped)
+            if result:
+                inserted, skipped = result
+                total_inserted += inserted
+                total_skipped += skipped
         except Exception as e:
             print(f"[ERROR] {channel_name}: {e}", flush=True)
             import traceback
@@ -31,7 +38,7 @@ def main():
             continue
     
     print("\n" + "=" * 70, flush=True)
-    print("✅ Усі парсери завершили роботу", flush=True)
+    print(f"✅ Усі парсери завершили роботу | Додано: {total_inserted}, Пропущено: {total_skipped}", flush=True)
     print("=" * 70, flush=True)
 
 if __name__ == "__main__":

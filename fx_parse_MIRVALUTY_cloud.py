@@ -60,9 +60,7 @@ def process_mirvaluty():
     
     if not raw_content:
         print(f"[WARN] Файл {filename} не знайдено в Supabase Storage", flush=True)
-        return
-    
-    print(f"[CLOUD] ✅ Завантажено {len(raw_content)} символів з Supabase", flush=True)
+        return 0, 0
     
     raw = raw_content.replace("[NO TEXT]", "")
     lines = re.sub(r'[^\w\s\.,:/\-\[\]€$🇺🇸🇪🇺🇵🇱🇬🇧🇨🇭🇨🇦🇨🇿🇸🇪🇯🇵🇳🇴🇩🇰]', ' ', raw).splitlines()
@@ -176,8 +174,10 @@ def process_mirvaluty():
         inserted, skipped_db = db.insert_rates(CHANNEL, rows)
         
         print(f"{CHANNEL:12} | Знайдено: {len(rows):4} (UAH: {len(uah_rates):4}, Крос: {len(cross_rates):3}) | Додано: {inserted:4}, Пропущено: {skipped_db:4}", flush=True)
+        return inserted, skipped_db
     else:
         print(f"{CHANNEL:12} | Курсів не знайдено", flush=True)
+        return 0, 0
 
 if __name__ == "__main__":
     process_mirvaluty()
